@@ -1,3 +1,8 @@
+#include "HID-Project.h"
+#include <IRLremote.h>
+#include <Adafruit_PWMServoDriver.h>
+#include "pca9685_rgb_led.h"
+
 /*
   Updated Fade RGB LED Smoothly through 7 colours
   Fades an RGB LED using PWM smoothly through 7 different colours pausing for 1 seconds on each colour.
@@ -11,9 +16,6 @@
   Please Feel Free to adapt and use this code in your projects. 
   Contact me at techhelpblog.com and let me know how you've used it!  
 */
-#include <IRLremote.h>
-#include <Adafruit_PWMServoDriver.h>
-#include "pca9685_rgb_led.h"
 
 /*---------------------PWM-STUFF-------------------*/
 //set the PCA9685 up
@@ -40,7 +42,8 @@ bool fading = false;
 uint8_t IRProtocol = 0;
 uint16_t IRAddress = 0;
 uint32_t IRCommand = 0;
-
+uint16_t lastIRAddress = 0;
+uint32_t lastIRCommand = 0;
 
 /*-------------------FADING-STUFF--------------------------*/
 byte RED, GREEN, BLUE; 
@@ -101,6 +104,7 @@ boolean colorNull = true;
 #define BLUE_LED 5
 #define RED_LED 6
 bool device_on = false;
+
 /*---------------SETUP--------------------*/
 void setup()
 {
@@ -140,6 +144,9 @@ void setup()
   setAll(0,0,4095);
   delay(200);
   setAll(0,0,0);
+
+  //Mediacontroller
+  Consumer.begin();
 }
 
 /*-----------------LOOP---------------*/
@@ -164,7 +171,7 @@ void loop()
         switch(IRCommand)
         {
           case 0xF708: //POWER
-            if(device_on)
+            /*if(device_on)
             {//turn off            
               Serial.println("RGB off");
               digitalWrite(RED_LED, HIGH);
@@ -179,7 +186,8 @@ void loop()
               digitalWrite(RED_LED, LOW);
               digitalWrite(BLUE_LED, HIGH);
               device_on = true;
-            }         
+            }    */
+            Consumer.write(CONSUMER_SLEEP); 
           break;
           
           case 0xFF00: //S-Key          
@@ -197,9 +205,50 @@ void loop()
             Serial.println("BLUE");
             setAll(0,0,4095);
           break;
+
+          //MEDIA-keys                
+          case 0xFB04:  //Vol+
+            Serial.println("Thomson Vol+");
+            Consumer.write(MEDIA_VOLUME_UP);
+          break;
+
+          case 0xFE01:  //Vol-
+            Serial.println("Thomson Vol-");
+            Consumer.write(MEDIA_VOLUME_DOWN);
+          break;
           
           case 0xF609:  //Play/Pause
-            Serial.println("Thomson Play/Pause");
+            Serial.println("Thomson Play/Pause");            
+            Consumer.write(MEDIA_PLAY_PAUSE); 
+          break;
+
+          case 0xFA05:  //Stop
+            Serial.println("Thomson Stop");
+            Consumer.write(MEDIA_STOP);
+          break;
+
+          case 0xF807:  //Next Song
+            Serial.println("Thomson next Song");
+            Consumer.write(MEDIA_NEXT);
+          break;
+
+          case 0xF40B:  //Previous Song
+            Serial.println("Thomson previous Song");
+            Consumer.write(MEDIA_PREV);
+          break;
+
+          case 0xF50A:  //Loop
+            Serial.println("Thomson loop-key");            
+          break;
+
+          case 0xF906:  //Fast Forward
+            Serial.println("Thomson Fast Forward");
+            Consumer.write(MEDIA_FAST_FORWARD);
+          break;
+
+          case 0xFD02:  //Rewind
+            Serial.println("Thomson Rewind");
+            Consumer.write(MEDIA_REWIND);
           break;
           
           default:
@@ -343,7 +392,14 @@ void loop()
       case 0: //universal (repeat)
       {
         if(IRCommand == 0xFFFF) //repeat
-          Serial.println("WDH");
+          if(lastIRAddress == 0xFF00 && lastIRCommand == 0xF906)
+          {
+            Serial.println("Repeat FDW");
+          }
+          else
+          {
+            Serial.println("RPT");
+          }
       }
       break;
       
@@ -354,19 +410,11 @@ void loop()
         Serial.println(IRCommand, HEX);
       break;
     }
-    /*if(IRAddress == 0xFF00 && IRCommand == 0xBC43)
-    {
-      Serial.print("Noname Play/Pause");
-    } */
 
     // reset variable to not read the same value twice
     IRProtocol = 0;
   }
   SREG = oldSREG;
-
-  /*is now here*/
-  
-    /*to here*/
   
 
 //Rest of your program - Avoid using delay(); function!
@@ -408,6 +456,12 @@ void IREvent(uint8_t protocol, uint16_t address, uint32_t command)
 
   // dont update value if blocking is enabled
   if (IRL_BLOCKING && !IRProtocol) {
+    //save old (last) address and command if theye arent repeat
+    if(IRAddress != 0 && IRCommand != 0xFFFF)
+    { 
+      lastIRAddress = IRAddress;
+      lastIRCommand = IRCommand;
+    }
     // update the values to the newest valid input
     IRProtocol = protocol;
     IRAddress = address;
