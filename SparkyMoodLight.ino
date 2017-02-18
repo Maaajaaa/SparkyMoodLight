@@ -1,4 +1,10 @@
-#include "HID-Project.h"
+#define HUD
+#define ENABLE_BOBLIGHT
+
+#ifdef HUD
+  #include "HID-Project.h"
+
+#endif
 #include <IRLremote.h>
 #include <Adafruit_PWMServoDriver.h>
 #include "pca9685_rgb_led.h"
@@ -60,6 +66,9 @@ byte colour_count = 1;                //Count the colours out
 unsigned long TIME_LED = 0;
 unsigned long TIME_COLOUR = 0;
 
+//Factor for Boblight
+#define boblightFactor 1
+
 //Colours
 //Blue
 #define C1_R 0
@@ -95,15 +104,18 @@ unsigned long TIME_COLOUR = 0;
 #define SECOND_PREFIX 0xAA
 #define NROUTPUTS 12
 
-uint8_t values[12];
+uint16_t values[12];
 uint8_t first = 0;
 
 boolean colorNull = true;
 
-/*-----------------STATUS-LEDS--------------------*/
+/*-----------------STATUS-LEDS-------------------*/
 #define BLUE_LED 5
 #define RED_LED 6
+
+/*------------------------STATUS-VARIABLES-----------*/
 bool device_on = false;
+bool screen_on = true;
 
 /*---------------SETUP--------------------*/
 void setup()
@@ -146,7 +158,8 @@ void setup()
   setAll(0,0,0);
 
   //Mediacontroller
-  Consumer.begin();
+  #ifdef HUD Consumer.begin(); 
+#endif
 }
 
 /*-----------------LOOP---------------*/
@@ -187,7 +200,8 @@ void loop()
               digitalWrite(BLUE_LED, HIGH);
               device_on = true;
             }    */
-            Consumer.write(CONSUMER_SLEEP); 
+            #ifdef HUD Consumer.write(CONSUMER_SLEEP); 
+            #endif
           break;
           
           case 0xFF00: //S-Key          
@@ -201,54 +215,89 @@ void loop()
             }
           break;
 
-          case 0xFC03:            
-            Serial.println("BLUE");
-            setAll(0,0,4095);
+          case 0xFC03: //p-key            
+            /*Serial.println("BLUE");
+            setAll(0,0,4095);*/
+            Serial.println("Thomeson p-key");
+            if(screen_on)
+            {
+              #ifdef HUD 
+                Consumer.write(CONSUMER_PROGRAMMABLE_BUTTON_CONFIGURATION);
+              #endif
+              screen_on = false;          
+            }
+            else
+            {
+              #ifdef HUD 
+                Consumer.write(CONSUMER_CONTROL_CONFIGURATION);  
+              #endif
+              screen_on = true;              
+            }
+            
           break;
 
           //MEDIA-keys                
           case 0xFB04:  //Vol+
             Serial.println("Thomson Vol+");
-            Consumer.write(MEDIA_VOLUME_UP);
+            #ifdef HUD 
+              Consumer.write(MEDIA_VOLUME_UP);  
+            #endif
           break;
 
           case 0xFE01:  //Vol-
             Serial.println("Thomson Vol-");
-            Consumer.write(MEDIA_VOLUME_DOWN);
+            #ifdef HUD 
+              Consumer.write(MEDIA_VOLUME_DOWN); 
+            #endif
           break;
           
           case 0xF609:  //Play/Pause
             Serial.println("Thomson Play/Pause");            
-            Consumer.write(MEDIA_PLAY_PAUSE); 
+            #ifdef HUD 
+              Consumer.write(MEDIA_PLAY_PAUSE); 
+            #endif
           break;
 
           case 0xFA05:  //Stop
             Serial.println("Thomson Stop");
-            Consumer.write(MEDIA_STOP);
+            #ifdef HUD 
+              Consumer.write(MEDIA_STOP);
+            #endif
           break;
 
           case 0xF807:  //Next Song
             Serial.println("Thomson next Song");
-            Consumer.write(MEDIA_NEXT);
+            #ifdef HUD
+              Consumer.write(MEDIA_NEXT);  
+            #endif
           break;
 
           case 0xF40B:  //Previous Song
             Serial.println("Thomson previous Song");
-            Consumer.write(MEDIA_PREV);
+            #ifdef HUD
+            Consumer.write(MEDIA_PREV);  
+            #endif
           break;
 
           case 0xF50A:  //Loop
             Serial.println("Thomson loop-key");            
+            #ifdef HUD 
+              Consumer.write(CONSUMER_CALCULATOR);  
+            #endif            
           break;
 
           case 0xF906:  //Fast Forward
             Serial.println("Thomson Fast Forward");
-            Consumer.write(MEDIA_FAST_FORWARD);
+            #ifdef HUD
+              Consumer.write(MEDIA_FAST_FORWARD);  
+            #endif
           break;
 
           case 0xFD02:  //Rewind
             Serial.println("Thomson Rewind");
-            Consumer.write(MEDIA_REWIND);
+            #ifdef HUD 
+              Consumer.write(MEDIA_REWIND);  
+            #endif
           break;
           
           default:
@@ -394,7 +443,10 @@ void loop()
         if(IRCommand == 0xFFFF) //repeat
           if(lastIRAddress == 0xFF00 && lastIRCommand == 0xF906)
           {
-            Serial.println("Repeat FDW");
+            Serial.println("Repeat FFDW");            
+            #ifdef HUD 
+              Consumer.write(MEDIA_FAST_FORWARD);  
+            #endif
           }
           else
           {
@@ -434,8 +486,10 @@ void loop()
       COLOUR();
     }
   }
+  #ifdef ENABLE_BOBLIGHT
   if(Serial.available())
     serialEvent();
+  #endif
 }
 
 void setAll(int R, int G, int B)
@@ -444,6 +498,12 @@ void setAll(int R, int G, int B)
   rgb1.set(R, G, B);
   rgb2.set(R, G, B);
   rgb3.set(R, G, B);
+  Serial.print("R:");
+  Serial.print(R);
+  Serial.print(" G:");
+  Serial.print(G);
+  Serial.print(" B:");
+  Serial.println(B);
 }
 
 
@@ -544,6 +604,7 @@ void COLOUR()
     BLUE = C7_B;
   }
 }
+#ifdef ENABLE_BOBLIGHT
 
 //boblightd needs to send 0x55 0xAA before sending the channel bytes
 void WaitForPrefix()
@@ -561,17 +622,22 @@ void serialEvent()
 {
   colorNull = false;
   WaitForPrefix();
-  for (uint8_t i = 0; i < NROUTPUTS; i++)
+  for (uint8_t i = 0; i < NROUTPUTS*2; i++)
   {
     while(!Serial.available());
     values[i] = Serial.read();
   }
-
-  rgb0.set(values[0]*16, values[1]*16, values[2]*16);
-  rgb1.set(values[3]*16, values[4]*16, values[5]*16);
-  rgb2.set(values[6]*16, values[7]*16, values[8]*16);
-  rgb3.set(values[9]*16, values[10]*16, values[11]*16);
+  for(uint8_t i = 0; i < NROUTPUTS; i++)
+  {
+    values[i] = values[2*i]+values[2*i+1];
+  }
+  rgb0.set(values[0]*boblightFactor, values[1]*boblightFactor, values[2]*boblightFactor);
+  rgb1.set(values[3]*boblightFactor, values[4]*boblightFactor, values[5]*boblightFactor);
+  rgb2.set(values[6]*boblightFactor, values[7]*boblightFactor, values[8]*boblightFactor);
+  rgb3.set(values[9]*boblightFactor, values[10]*boblightFactor, values[11]*boblightFactor);
   
   //for (uint8_t i = 0; i < NROUTPUTS; i++)
     //analogWrite(outputs[i], values[i]);
 }
+
+#endif
